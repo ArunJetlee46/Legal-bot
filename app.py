@@ -8,6 +8,8 @@ in 10 languages (English + 9 major Indian languages).
 from __future__ import annotations
 
 import re
+import os
+
 from flask import Flask, render_template, request, jsonify, session
 
 from legal_knowledge import (
@@ -25,7 +27,7 @@ from language_support import (
 )
 
 app = Flask(__name__)
-app.secret_key = "legal-assistant-secret-key-change-in-production"
+app.secret_key = os.environ.get("FLASK_SECRET_KEY", "legal-assistant-dev-secret")
 
 
 # ---------------------------------------------------------------------------
@@ -155,4 +157,4 @@ def list_topics():
 # ---------------------------------------------------------------------------
 
 if __name__ == "__main__":
-    app.run(debug=False, host="0.0.0.0", port=5000)
+    app.run(debug=False, host="127.0.0.1", port=5000)

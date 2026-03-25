@@ -5,6 +5,19 @@ Provides pre-translated UI strings for 10 languages and runtime translation util
 
 from __future__ import annotations
 
+# Optional dependencies – fall back gracefully if not installed
+try:
+    from langdetect import detect as _langdetect_detect, LangDetectException  # type: ignore
+    _LANGDETECT_AVAILABLE = True
+except ImportError:
+    _LANGDETECT_AVAILABLE = False
+
+try:
+    from deep_translator import GoogleTranslator  # type: ignore
+    _DEEP_TRANSLATOR_AVAILABLE = True
+except ImportError:
+    _DEEP_TRANSLATOR_AVAILABLE = False
+
 # ---------------------------------------------------------------------------
 # Pre-translated UI strings
 # ---------------------------------------------------------------------------
@@ -380,9 +393,10 @@ def detect_language(text: str) -> str:
     Detect the language of the provided text.
     Returns a language code (e.g. 'hi', 'ta') or 'en' as default.
     """
+    if not _LANGDETECT_AVAILABLE:
+        return "en"
     try:
-        from langdetect import detect, LangDetectException  # type: ignore
-        detected = detect(text)
+        detected = _langdetect_detect(text)
         # Map langdetect codes to our supported codes
         mapping = {
             "hi": "hi", "bn": "bn", "ta": "ta", "te": "te",
@@ -399,10 +413,9 @@ def translate_text(text: str, target_lang: str) -> str:
     Translate text to the target language using deep-translator.
     Falls back to the original text if translation fails.
     """
-    if target_lang == "en":
+    if target_lang == "en" or not _DEEP_TRANSLATOR_AVAILABLE:
         return text
     try:
-        from deep_translator import GoogleTranslator  # type: ignore
         # deep-translator uses full language names or ISO codes
         lang_map = {
             "hi": "hindi", "bn": "bengali", "ta": "tamil",

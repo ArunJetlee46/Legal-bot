@@ -215,8 +215,29 @@
       if (data.status === "ok") {
         currentLang = newLang;
         ui          = data.ui;
-        // Reload page so server renders correct language strings
-        window.location.reload();
+
+        // Update all UI strings in place without losing chat history
+        document.title                               = ui.title;
+        document.querySelector("h1").textContent     = ui.title;
+        document.querySelector(".subtitle").textContent = ui.subtitle;
+        userInput.placeholder                        = ui.ask_placeholder;
+        userInput.setAttribute("aria-label", ui.ask_placeholder);
+        document.querySelector(".send-btn").textContent = ui.send_btn;
+        document.querySelector(".disclaimer").textContent = ui.disclaimer;
+        document.querySelector(".sidebar-heading").textContent = ui.topics_heading;
+        document.documentElement.setAttribute("lang", newLang);
+
+        // Update helplines
+        const helplines = document.querySelectorAll(".helplines span");
+        if (helplines.length === 4) {
+          helplines[0].textContent = ui.emergency;
+          helplines[1].textContent = ui.women_helpline;
+          helplines[2].textContent = ui.child_helpline;
+          helplines[3].textContent = ui.legal_aid;
+        }
+
+        // Append a language-change greeting in the new language
+        appendBotBubble(ui.greeting);
       }
     } catch (err) {
       console.error("Language switch failed", err);
