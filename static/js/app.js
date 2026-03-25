@@ -1,0 +1,244 @@
+/**
+ * Legal Assistant – Frontend JavaScript
+ * Handles chat interactions, language switching, and topic shortcuts.
+ */
+
+(function () {
+  "use strict";
+
+  // ── Config from server ──────────────────────────────────────────────────
+  const { lang: initialLang, ui: initialUi, topics } = window.LEGAL_BOT;
+  let currentLang = initialLang;
+  let ui = initialUi;
+
+  // ── DOM refs ────────────────────────────────────────────────────────────
+  const chatWindow  = document.getElementById("chat-window");
+  const chatForm    = document.getElementById("chat-form");
+  const userInput   = document.getElementById("user-input");
+  const langSelect  = document.getElementById("lang-select");
+
+  // ── Utilities ───────────────────────────────────────────────────────────
+
+  function scrollToBottom() {
+    chatWindow.scrollTop = chatWindow.scrollHeight;
+  }
+
+  /** Create and append a bot bubble; returns the inner content div. */
+  function appendBotBubble(content) {
+    const row = document.createElement("div");
+    row.className = "bubble-row bot";
+    row.setAttribute("role", "listitem");
+
+    const avatar = document.createElement("div");
+    avatar.className = "avatar";
+    avatar.setAttribute("aria-hidden", "true");
+    avatar.textContent = "⚖️";
+
+    const bubble = document.createElement("div");
+    bubble.className = "bubble";
+
+    if (typeof content === "string") {
+      bubble.innerHTML = content;
+    } else {
+      bubble.appendChild(content);
+    }
+
+    row.appendChild(avatar);
+    row.appendChild(bubble);
+    chatWindow.appendChild(row);
+    scrollToBottom();
+    return bubble;
+  }
+
+  /** Create and append a user bubble. */
+  function appendUserBubble(text) {
+    const row = document.createElement("div");
+    row.className = "bubble-row user";
+    row.setAttribute("role", "listitem");
+
+    const avatar = document.createElement("div");
+    avatar.className = "avatar";
+    avatar.setAttribute("aria-hidden", "true");
+    avatar.textContent = "🧑";
+
+    const bubble = document.createElement("div");
+    bubble.className = "bubble";
+    bubble.textContent = text;
+
+    row.appendChild(avatar);
+    row.appendChild(bubble);
+    chatWindow.appendChild(row);
+    scrollToBottom();
+  }
+
+  /** Show animated typing indicator; returns a function to remove it. */
+  function showTyping() {
+    const row = document.createElement("div");
+    row.className = "bubble-row bot";
+    row.id = "typing-row";
+
+    const avatar = document.createElement("div");
+    avatar.className = "avatar";
+    avatar.setAttribute("aria-hidden", "true");
+    avatar.textContent = "⚖️";
+
+    const bubble = document.createElement("div");
+    bubble.className = "bubble";
+    bubble.innerHTML =
+      '<div class="typing-indicator" aria-label="Thinking">' +
+      "<span></span><span></span><span></span></div>";
+
+    row.appendChild(avatar);
+    row.appendChild(bubble);
+    chatWindow.appendChild(row);
+    scrollToBottom();
+
+    return function removeTyping() {
+      const el = document.getElementById("typing-row");
+      if (el) el.remove();
+    };
+  }
+
+  // ── Render helpers ──────────────────────────────────────────────────────
+
+  /** Build a topic card DOM element from server response data. */
+  function buildTopicCard(data) {
+    const card = document.createElement("div");
+    card.className = "topic-card";
+
+    const h3 = document.createElement("h3");
+    h3.textContent = data.title;
+    card.appendChild(h3);
+
+    const summary = document.createElement("p");
+    summary.className = "summary";
+    summary.textContent = data.summary;
+    card.appendChild(summary);
+
+    // Details
+    const h4Details = document.createElement("h4");
+    h4Details.textContent = "Key Points";
+    card.appendChild(h4Details);
+
+    const detailsDiv = document.createElement("div");
+    detailsDiv.innerHTML = data.details_html;
+    card.appendChild(detailsDiv);
+
+    // Steps
+    const h4Steps = document.createElement("h4");
+    h4Steps.textContent = ui.steps_heading || "What You Can Do";
+    card.appendChild(h4Steps);
+
+    const stepsDiv = document.createElement("div");
+    stepsDiv.innerHTML = data.steps_html;
+    card.appendChild(stepsDiv);
+
+    // Law tag
+    const lawTag = document.createElement("span");
+    lawTag.className = "law-tag";
+    lawTag.textContent = (ui.law_label || "Law") + ": " + data.law;
+    card.appendChild(lawTag);
+
+    return card;
+  }
+
+  /** Render the server response into the chat window. */
+  function renderResponse(data) {
+    if (data.type === "topic") {
+      appendBotBubble(buildTopicCard(data));
+    } else if (data.type === "greeting" || data.type === "thanks") {
+      appendBotBubble(data.text);
+    } else {
+      // unknown / error
+      appendBotBubble(data.text || data.error || "Something went wrong.");
+    }
+  }
+
+  // ── Chat send ───────────────────────────────────────────────────────────
+
+  async function sendMessage(text) {
+    if (!text) return;
+    appendUserBubble(text);
+    userInput.value = "";
+
+    const removeTyping = showTyping();
+
+    try {
+      const res = await fetch("/chat", {
+        method:  "POST",
+        headers: { "Content-Type": "application/json" },
+        body:    JSON.stringify({ message: text, lang: currentLang }),
+      });
+      const data = await res.json();
+      removeTyping();
+      renderResponse(data);
+    } catch (err) {
+      removeTyping();
+      appendBotBubble("⚠️ Network error. Please check your connection and try again.");
+    }
+  }
+
+  // ── Topic shortcut buttons ──────────────────────────────────────────────
+
+  function attachTopicButtons() {
+    document.querySelectorAll(".topic-btn").forEach((btn) => {
+      btn.addEventListener("click", async () => {
+        const key   = btn.dataset.key;
+        const label = btn.textContent.trim();
+        appendUserBubble(label);
+
+        const removeTyping = showTyping();
+        try {
+          const res  = await fetch(`/topic/${encodeURIComponent(key)}`);
+          const data = await res.json();
+          removeTyping();
+          renderResponse(data);
+        } catch (err) {
+          removeTyping();
+          appendBotBubble("⚠️ Failed to load topic. Please try again.");
+        }
+      });
+    });
+  }
+
+  // ── Language switch ─────────────────────────────────────────────────────
+
+  langSelect.addEventListener("change", async () => {
+    const newLang = langSelect.value;
+    try {
+      const res  = await fetch("/set_language", {
+        method:  "POST",
+        headers: { "Content-Type": "application/json" },
+        body:    JSON.stringify({ lang: newLang }),
+      });
+      const data = await res.json();
+      if (data.status === "ok") {
+        currentLang = newLang;
+        ui          = data.ui;
+        // Reload page so server renders correct language strings
+        window.location.reload();
+      }
+    } catch (err) {
+      console.error("Language switch failed", err);
+    }
+  });
+
+  // ── Form submit ─────────────────────────────────────────────────────────
+
+  chatForm.addEventListener("submit", (e) => {
+    e.preventDefault();
+    const text = userInput.value.trim();
+    if (text) sendMessage(text);
+  });
+
+  // ── Init ─────────────────────────────────────────────────────────────────
+
+  function init() {
+    attachTopicButtons();
+    // Show greeting automatically on page load
+    appendBotBubble(ui.greeting);
+    userInput.focus();
+  }
+
+  init();
+})();

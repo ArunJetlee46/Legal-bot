@@ -1,0 +1,106 @@
+<!DOCTYPE html>
+<html lang="{{ lang }}" dir="auto">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>{{ ui.title }}</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}" />
+</head>
+<body>
+  <!-- ====== Header ====== -->
+  <header class="site-header" role="banner">
+    <div class="header-inner">
+      <div class="header-title">
+        <span class="logo" aria-hidden="true">⚖️</span>
+        <div>
+          <h1>{{ ui.title }}</h1>
+          <p class="subtitle">{{ ui.subtitle }}</p>
+        </div>
+      </div>
+
+      <!-- Language Selector -->
+      <div class="lang-selector" role="navigation" aria-label="{{ ui.select_language }}">
+        <label for="lang-select">🌐 {{ ui.select_language }}:</label>
+        <select id="lang-select" aria-label="{{ ui.select_language }}">
+          {% for code, name in supported_languages.items() %}
+          <option value="{{ code }}" {% if code == lang %}selected{% endif %}>{{ name }}</option>
+          {% endfor %}
+        </select>
+      </div>
+    </div>
+
+    <!-- Emergency Helplines -->
+    <div class="helplines" role="complementary" aria-label="Emergency helplines">
+      <span>{{ ui.emergency }}</span>
+      <span>{{ ui.women_helpline }}</span>
+      <span>{{ ui.child_helpline }}</span>
+      <span>{{ ui.legal_aid }}</span>
+    </div>
+  </header>
+
+  <!-- ====== Main Layout ====== -->
+  <div class="app-layout">
+
+    <!-- Sidebar: Quick Topics -->
+    <aside class="sidebar" aria-label="{{ ui.topics_heading }}">
+      <h2 class="sidebar-heading">{{ ui.topics_heading }}</h2>
+      <nav>
+        <ul class="topic-list" role="list">
+          {% for topic in topics %}
+          <li>
+            <button
+              class="topic-btn"
+              data-key="{{ topic.key }}"
+              aria-label="Learn about {{ topic.title }}"
+            >{{ topic.title }}</button>
+          </li>
+          {% endfor %}
+        </ul>
+      </nav>
+    </aside>
+
+    <!-- Chat Area -->
+    <main class="chat-main" role="main">
+      <div
+        id="chat-window"
+        class="chat-window"
+        role="log"
+        aria-live="polite"
+        aria-label="Chat conversation"
+      >
+        <!-- Initial greeting injected by JS -->
+      </div>
+
+      <!-- Input Row -->
+      <form id="chat-form" class="chat-form" autocomplete="off" novalidate>
+        <label for="user-input" class="sr-only">{{ ui.ask_placeholder }}</label>
+        <input
+          id="user-input"
+          type="text"
+          class="chat-input"
+          placeholder="{{ ui.ask_placeholder }}"
+          aria-label="{{ ui.ask_placeholder }}"
+          maxlength="500"
+          required
+        />
+        <button type="submit" class="send-btn" aria-label="{{ ui.send_btn }}">
+          {{ ui.send_btn }}
+        </button>
+      </form>
+
+      <!-- Disclaimer -->
+      <p class="disclaimer" role="note">{{ ui.disclaimer }}</p>
+    </main>
+  </div>
+
+  <!-- Data passed to JS -->
+  <script>
+    window.LEGAL_BOT = {
+      lang: {{ lang | tojson }},
+      ui: {{ ui | tojson }},
+      topics: {{ topics | tojson }},
+    };
+  </script>
+  <script src="{{ url_for('static', filename='js/app.js') }}"></script>
+</body>
+</html>
