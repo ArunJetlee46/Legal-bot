@@ -82,6 +82,76 @@ class TestFindTopic:
         assert topic is not None
         assert topic["title"] == "Child Rights"
 
+    def test_sc_st_rights_keyword(self):
+        topic = find_topic("I am a Dalit facing atrocities and caste abuse")
+        assert topic is not None
+        assert topic["title"] == "SC/ST Rights & Anti-Atrocity Protection"
+
+    def test_sc_st_rights_hindi_keyword(self):
+        topic = find_topic("दलित अत्याचार")
+        assert topic is not None
+        assert topic["title"] == "SC/ST Rights & Anti-Atrocity Protection"
+
+    def test_criminal_rights_arrest_keyword(self):
+        topic = find_topic("I have been arrested by the police")
+        assert topic is not None
+        assert topic["title"] == "Rights During Arrest & Criminal Proceedings"
+
+    def test_criminal_rights_fir_keyword(self):
+        topic = find_topic("How do I file an FIR?")
+        assert topic is not None
+        assert topic["title"] == "Rights During Arrest & Criminal Proceedings"
+
+    def test_criminal_rights_bail_keyword(self):
+        topic = find_topic("I need bail from custody")
+        assert topic is not None
+        assert topic["title"] == "Rights During Arrest & Criminal Proceedings"
+
+    def test_women_rights_posh_keyword(self):
+        topic = find_topic("I want to report sexual harassment under the POSH act")
+        assert topic is not None
+        assert topic["title"] == "Women's Rights"
+
+    def test_women_rights_maternity_keyword(self):
+        topic = find_topic("I was denied my maternity benefit")
+        assert topic is not None
+        assert topic["title"] == "Women's Rights"
+
+    def test_disability_rights_keyword(self):
+        topic = find_topic("I am disabled and need a UDID card")
+        assert topic is not None
+        assert topic["title"] == "Disability Rights"
+
+    def test_disability_rights_hindi_keyword(self):
+        topic = find_topic("दिव्यांग व्यक्ति के अधिकार")
+        assert topic is not None
+        assert topic["title"] == "Disability Rights"
+
+    def test_senior_citizen_rights_keyword(self):
+        topic = find_topic("I am a senior citizen not receiving pension")
+        assert topic is not None
+        assert topic["title"] == "Senior Citizen Rights"
+
+    def test_senior_citizen_rights_parents_keyword(self):
+        topic = find_topic("I need old age support as an elderly parent")
+        assert topic is not None
+        assert topic["title"] == "Senior Citizen Rights"
+
+    def test_cyber_crime_keyword(self):
+        topic = find_topic("I am a victim of cybercrime and hacking")
+        assert topic is not None
+        assert topic["title"] == "Cyber Crime & Digital Rights"
+
+    def test_cyber_crime_upi_keyword(self):
+        topic = find_topic("Someone did UPI fraud via phishing")
+        assert topic is not None
+        assert topic["title"] == "Cyber Crime & Digital Rights"
+
+    def test_cyber_crime_otp_keyword(self):
+        topic = find_topic("I received a phishing call and lost money")
+        assert topic is not None
+        assert topic["title"] == "Cyber Crime & Digital Rights"
+
     def test_hindi_consumer_keyword(self):
         topic = find_topic("उपभोक्ता शिकायत")
         assert topic is not None
@@ -206,6 +276,8 @@ class TestIndexRoute:
     def test_html_contains_chat_form(self, client):
         rv = client.get("/")
         assert b"chat-form" in rv.data
+        assert b"user-input" in rv.data
+        assert b"send-btn" in rv.data
 
 
 class TestChatRoute:
@@ -297,6 +369,22 @@ class TestTopicRoute:
         for key in LEGAL_TOPICS:
             rv = client.get(f"/topic/{key}")
             assert rv.status_code == 200, f"Topic {key} returned {rv.status_code}"
+
+    def test_new_topics_have_required_fields(self, client):
+        new_keys = [
+            "sc_st_rights", "criminal_rights", "women_rights",
+            "disability_rights", "senior_citizen_rights", "cyber_crime",
+        ]
+        for key in new_keys:
+            rv = client.get(f"/topic/{key}")
+            assert rv.status_code == 200, f"Topic {key} returned {rv.status_code}"
+            data = rv.get_json()
+            assert data["type"] == "topic", f"Topic {key} has wrong type"
+            assert "title" in data and data["title"], f"Topic {key} missing title"
+            assert "summary" in data and data["summary"], f"Topic {key} missing summary"
+            assert "details_html" in data, f"Topic {key} missing details_html"
+            assert "steps_html" in data, f"Topic {key} missing steps_html"
+            assert "law" in data and data["law"], f"Topic {key} missing law"
 
 
 class TestLanguagesRoute:

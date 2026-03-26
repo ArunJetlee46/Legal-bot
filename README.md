@@ -7,7 +7,7 @@ A user-friendly digital assistant providing **free legal information in 10 langu
 ## ✨ Features
 
 - **Multi-language support** – English, Hindi (हिन्दी), Bengali (বাংলা), Tamil (தமிழ்), Telugu (తెలుగు), Marathi (मराठी), Kannada (ಕನ್ನಡ), Malayalam (മലയാളം), Punjabi (ਪੰਜਾਬੀ), Gujarati (ગુજરાતી)
-- **9 major legal topics** covering the most important rights for marginalized communities:
+- **15 major legal topics** covering the most important rights for marginalized communities:
   - Consumer Rights (Consumer Protection Act, 2019)
   - Right to Information / RTI (RTI Act, 2005)
   - Labour Rights (Minimum Wages Act, ID Act, EPF, ESI)
@@ -17,6 +17,12 @@ A user-friendly digital assistant providing **free legal information in 10 langu
   - Tenant Rights (State Rent Control Acts, Model Tenancy Act, 2021)
   - Property & Land Rights (RERA, Transfer of Property Act)
   - Child Rights (RTE, POCSO, Child Labour Act)
+  - SC/ST Rights & Anti-Atrocity Protection (SC/ST Act 1989, Forest Rights Act)
+  - Rights During Arrest & Criminal Proceedings (BNSS 2023, bail, FIR, custodial rights)
+  - Women's Rights (POSH Act 2013, Maternity Benefit Act, BNS 2023)
+  - Disability Rights (RPWD Act 2016, UDID card, 4% reservation)
+  - Senior Citizen Rights (Maintenance & Welfare of Parents Act 2007, ELDERLINE 14567)
+  - Cyber Crime & Digital Rights (IT Act 2000, cybercrime.gov.in, Cyber Helpline 1930)
 - **Keyword-based intent detection** with Hindi keywords for bilingual queries
 - **Language auto-detection** – automatically detects user's language from typed text
 - **Emergency helplines** always visible in header (112, 1091, 1098, 15100)
@@ -62,7 +68,7 @@ Legal-bot/
 │   ├── css/style.css       # Accessible, mobile-first stylesheet
 │   └── js/app.js           # Frontend chat logic
 └── tests/
-    └── test_app.py         # 51 unit and integration tests
+    └── test_app.py         # 66 unit and integration tests
 ```
 
 ---
@@ -73,7 +79,7 @@ Legal-bot/
 python -m pytest tests/ -v
 ```
 
-All **51 tests** should pass.
+All **66 tests** should pass.
 
 ---
 
@@ -111,6 +117,12 @@ curl -X POST http://localhost:5000/chat \
 | Tenant Rights | Model Tenancy Act, 2021 |
 | Property & Land | RERA 2016, Transfer of Property Act 1882 |
 | Child Rights | RTE 2009, POCSO 2012 |
+| SC/ST Rights | SC/ST (Prevention of Atrocities) Act 1989 |
+| Arrest & Criminal Rights | BNSS 2023, Constitution Art. 20–22 |
+| Women's Rights | POSH Act 2013, BNS 2023, Maternity Benefit Act |
+| Disability Rights | Rights of Persons with Disabilities Act 2016 |
+| Senior Citizen Rights | Maintenance & Welfare of Parents Act 2007 |
+| Cyber Crime & Digital Rights | IT Act 2000, DPDP Act 2023 |
 
 ---
 
