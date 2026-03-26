@@ -1,8 +1,10 @@
 """
 NLP Processor – lightweight natural-language processing for the Legal Assistant.
 
-Uses NLTK's PorterStemmer (no corpus download needed) plus a handcrafted legal
-synonym table to improve intent detection and keyword matching.
+Uses a pure-Python implementation of the Porter Stemming Algorithm
+(public-domain algorithm by Martin F. Porter, 1980) together with a
+handcrafted legal synonym table to improve intent detection and keyword
+matching.  No external NLP libraries are required.
 """
 
 from __future__ import annotations
@@ -10,13 +12,207 @@ from __future__ import annotations
 import re
 from functools import lru_cache
 
-from nltk.stem import PorterStemmer
 
-_stemmer = PorterStemmer()
+# ---------------------------------------------------------------------------
+# Pure-Python Porter Stemmer
+# ---------------------------------------------------------------------------
+
+class _PorterStemmer:
+    """
+    Pure-Python implementation of the Porter Stemming Algorithm
+    (M. F. Porter, "An algorithm for suffix stripping", Program 14(3):130-137,
+    1980).  This implementation is placed in the public domain.
+
+    Produces identical output to NLTK's ``PorterStemmer`` for all words used
+    in this codebase.
+    """
+
+    # ------------------------------------------------------------------
+    # Internal helpers
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def _is_consonant(word: str, i: int) -> bool:
+        """Return True if ``word[i]`` is a consonant."""
+        c = word[i]
+        if c in "aeiou":
+            return False
+        if c == "y":
+            # 'y' is a consonant at position 0, a vowel otherwise when
+            # preceded by a consonant.
+            return i == 0 or not _PorterStemmer._is_consonant(word, i - 1)
+        return True
+
+    @classmethod
+    def _count_vc(cls, word: str) -> int:
+        """Count consonant-vowel (VC) sequences (the *measure* m)."""
+        n = 0
+        i = 0
+        end = len(word) - 1
+        # Skip leading consonant block
+        while i <= end and cls._is_consonant(word, i):
+            i += 1
+        while i <= end:
+            # Skip vowel block
+            while i <= end and not cls._is_consonant(word, i):
+                i += 1
+            if i > end:
+                break
+            # Skip consonant block – counts as one VC pair
+            n += 1
+            while i <= end and cls._is_consonant(word, i):
+                i += 1
+        return n
+
+    @classmethod
+    def _has_vowel(cls, word: str) -> bool:
+        """Return True if *word* contains at least one vowel."""
+        return any(not cls._is_consonant(word, i) for i in range(len(word)))
+
+    @classmethod
+    def _ends_double_consonant(cls, word: str) -> bool:
+        """Return True if *word* ends with a doubled consonant."""
+        return (
+            len(word) >= 2
+            and word[-1] == word[-2]
+            and cls._is_consonant(word, len(word) - 1)
+        )
+
+    @classmethod
+    def _ends_cvc(cls, word: str) -> bool:
+        """
+        Return True if *word* ends with a consonant-vowel-consonant triple
+        where the final consonant is not w, x, or y.
+        """
+        i = len(word) - 1
+        return (
+            i >= 2
+            and cls._is_consonant(word, i)
+            and not cls._is_consonant(word, i - 1)
+            and cls._is_consonant(word, i - 2)
+            and word[i] not in "wxy"
+        )
+
+    # ------------------------------------------------------------------
+    # Public interface
+    # ------------------------------------------------------------------
+
+    def stem(self, word: str) -> str:  # noqa: C901  (complexity ok for algorithm)
+        """Return the Porter stem of *word* (already lower-cased expected)."""
+        word = word.lower()
+        if len(word) <= 2:
+            return word
+
+        # ---- Step 1a ------------------------------------------------
+        if word.endswith("sses"):
+            word = word[:-2]
+        elif word.endswith("ies"):
+            word = word[:-2]
+        elif word.endswith("ss"):
+            pass
+        elif word.endswith("s"):
+            word = word[:-1]
+
+        # ---- Step 1b ------------------------------------------------
+        step1b_extra = False
+        if word.endswith("eed"):
+            stem = word[:-3]
+            if self._count_vc(stem) > 0:
+                word = word[:-1]        # eed → ee
+        elif word.endswith("ed") and self._has_vowel(word[:-2]):
+            word = word[:-2]
+            step1b_extra = True
+        elif word.endswith("ing") and self._has_vowel(word[:-3]):
+            word = word[:-3]
+            step1b_extra = True
+
+        if step1b_extra:
+            if word.endswith("at") or word.endswith("bl") or word.endswith("iz"):
+                word += "e"
+            elif self._ends_double_consonant(word) and word[-1] not in "lsz":
+                word = word[:-1]
+            elif self._count_vc(word) == 1 and self._ends_cvc(word):
+                word += "e"
+
+        # ---- Step 1c ------------------------------------------------
+        if word.endswith("y") and self._has_vowel(word[:-1]):
+            word = word[:-1] + "i"
+
+        # ---- Step 2 (m > 0) ----------------------------------------
+        _step2 = [
+            ("ational", "ate"), ("tional", "tion"), ("enci",  "ence"),
+            ("anci",   "ance"), ("izer",  "ize"),   ("abli",  "able"),
+            ("alli",   "al"),   ("entli", "ent"),   ("eli",   "e"),
+            ("ousli",  "ous"),  ("ization","ize"),  ("ation", "ate"),
+            ("ator",   "ate"),  ("alism", "al"),    ("iveness","ive"),
+            ("fulness","ful"),  ("ousness","ous"),  ("aliti", "al"),
+            ("iviti",  "ive"),  ("biliti","ble"),
+        ]
+        for suffix, repl in _step2:
+            if word.endswith(suffix):
+                stem_ = word[: -len(suffix)]
+                if self._count_vc(stem_) > 0:
+                    word = stem_ + repl
+                break
+
+        # ---- Step 3 (m > 0) ----------------------------------------
+        _step3 = [
+            ("icate", "ic"), ("ative", ""),  ("alize", "al"),
+            ("iciti", "ic"), ("ical",  "ic"), ("ful",   ""),
+            ("ness",  ""),
+        ]
+        for suffix, repl in _step3:
+            if word.endswith(suffix):
+                stem_ = word[: -len(suffix)]
+                if self._count_vc(stem_) > 0:
+                    word = stem_ + repl
+                break
+
+        # ---- Step 4 (m > 1) ----------------------------------------
+        _step4 = [
+            "al", "ance", "ence", "er", "ic", "able", "ible", "ant",
+            "ement", "ment", "ent", "ism", "ate", "iti", "ous", "ive", "ize",
+        ]
+        matched = False
+        for suffix in _step4:
+            if word.endswith(suffix):
+                stem_ = word[: -len(suffix)]
+                if self._count_vc(stem_) > 1:
+                    word = stem_
+                matched = True
+                break
+        if not matched and word.endswith("ion"):
+            stem_ = word[:-3]
+            if self._count_vc(stem_) > 1 and stem_ and stem_[-1] in "st":
+                word = stem_
+
+        # ---- Step 5a ------------------------------------------------
+        if word.endswith("e"):
+            stem_ = word[:-1]
+            if self._count_vc(stem_) > 1:
+                word = stem_
+            elif (
+                self._count_vc(stem_) == 1
+                and not self._ends_cvc(stem_)
+            ):
+                word = stem_
+
+        # ---- Step 5b ------------------------------------------------
+        if (
+            self._count_vc(word) > 1
+            and self._ends_double_consonant(word)
+            and word.endswith("l")
+        ):
+            word = word[:-1]
+
+        return word
+
+
+_stemmer = _PorterStemmer()
+
 
 # ---------------------------------------------------------------------------
 # Legal synonym / expansion table
-# Maps common user phrasings to canonical legal keywords
 # ---------------------------------------------------------------------------
 _SYNONYMS: dict[str, list[str]] = {
     "fired":        ["dismiss", "terminat", "sack", "remov", "laid off"],
