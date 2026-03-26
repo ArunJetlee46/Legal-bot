@@ -25,6 +25,12 @@ from language_support import (
     SUPPORTED_LANGUAGES,
     DEFAULT_LANGUAGE,
 )
+from laws_database import (
+    search_law,
+    get_law_by_short_name,
+    get_all_laws,
+    get_law_categories,
+)
 
 app = Flask(__name__)
 app.secret_key = os.environ.get("FLASK_SECRET_KEY", "legal-assistant-dev-secret")
@@ -56,6 +62,25 @@ def _build_topic_response(topic: dict) -> dict:
         "details_html": f"<ul>{details_html}</ul>",
         "steps_html": f"<ol>{steps_html}</ol>",
         "law": topic["law"],
+    }
+
+
+def _build_law_response(law: dict) -> dict:
+    """Convert a laws-database row dict into a structured chat response payload."""
+    provisions = [p.strip() for p in law.get("key_provisions", "").split("|") if p.strip()]
+    provisions_html = "".join(f"<li>{_markdown_to_html(p)}</li>" for p in provisions)
+    return {
+        "type": "law",
+        "title": law.get("act_name", ""),
+        "short_name": law.get("short_name", ""),
+        "year": law.get("year", ""),
+        "category": law.get("category", ""),
+        "description": law.get("description", ""),
+        "provisions_html": f"<ul>{provisions_html}</ul>" if provisions_html else "",
+        "enforcing_authority": law.get("enforcing_authority", ""),
+        "helpline": law.get("helpline", ""),
+        "portal": law.get("portal", ""),
+        "status": law.get("status", ""),
     }
 
 
@@ -122,12 +147,17 @@ def chat():
     if is_gratitude(message):
         return jsonify({"type": "thanks", "text": ui["thanks_reply"]})
 
-    # 3. Keyword topic match
+    # 3. Keyword topic match (structured legal topics)
     topic = find_topic(message)
     if topic:
         return jsonify(_build_topic_response(topic))
 
-    # 4. No match
+    # 4. CSV laws-database search (fallback for specific act/law queries)
+    laws = search_law(message, max_results=1)
+    if laws:
+        return jsonify(_build_law_response(laws[0]))
+
+    # 5. No match
     return jsonify({"type": "unknown", "text": ui["no_match"]})
 
 
@@ -150,6 +180,49 @@ def get_languages():
 def list_topics():
     """Return the list of available legal topics."""
     return jsonify(get_topics_list())
+
+
+@app.route("/search_law", methods=["GET"])
+def search_law_route():
+    """
+    Search the laws database by keyword/abbreviation.
+
+    Query parameters:
+      q   - search query (required)
+      n   - max number of results (optional, default 5, max 20)
+
+    Returns a JSON list of matching law objects.
+    """
+    query = (request.args.get("q") or "").strip()
+    if not query:
+        return jsonify({"error": "Missing query parameter 'q'"}), 400
+    try:
+        n = min(int(request.args.get("n", 5)), 20)
+    except ValueError:
+        n = 5
+    results = search_law(query, max_results=n)
+    return jsonify([_build_law_response(law) for law in results])
+
+
+@app.route("/laws", methods=["GET"])
+def list_laws():
+    """
+    Return all laws in the database.
+
+    Optional query parameter:
+      category - filter by category (case-insensitive)
+    """
+    category_filter = (request.args.get("category") or "").strip().lower()
+    all_laws = get_all_laws()
+    if category_filter:
+        all_laws = [law for law in all_laws if law.get("category", "").lower() == category_filter]
+    return jsonify([_build_law_response(law) for law in all_laws])
+
+
+@app.route("/law_categories", methods=["GET"])
+def list_law_categories():
+    """Return the list of law categories in the database."""
+    return jsonify(get_law_categories())
 
 
 # ---------------------------------------------------------------------------

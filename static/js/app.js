@@ -142,10 +142,79 @@
     return card;
   }
 
+  /** Build a law card DOM element from a CSV-database law response. */
+  function buildLawCard(data) {
+    const card = document.createElement("div");
+    card.className = "topic-card";
+
+    // Title row: act name + year badge
+    const h3 = document.createElement("h3");
+    h3.textContent = data.title;
+    card.appendChild(h3);
+
+    // Meta row: short name, category, status
+    const meta = document.createElement("p");
+    meta.className = "summary";
+    const parts = [];
+    if (data.short_name) parts.push(data.short_name);
+    if (data.year) parts.push(data.year);
+    if (data.category) parts.push(data.category);
+    if (data.status && data.status !== "Active") parts.push("(" + data.status + ")");
+    meta.textContent = parts.join(" · ");
+    card.appendChild(meta);
+
+    // Description
+    const desc = document.createElement("p");
+    desc.textContent = data.description;
+    card.appendChild(desc);
+
+    // Key provisions
+    if (data.provisions_html) {
+      const h4 = document.createElement("h4");
+      h4.textContent = "Key Provisions";
+      card.appendChild(h4);
+      const div = document.createElement("div");
+      div.innerHTML = data.provisions_html;
+      card.appendChild(div);
+    }
+
+    // Footer info
+    const footer = document.createElement("div");
+    footer.className = "law-footer";
+
+    if (data.enforcing_authority) {
+      const auth = document.createElement("span");
+      auth.className = "law-tag";
+      auth.textContent = "Enforced by: " + data.enforcing_authority;
+      footer.appendChild(auth);
+    }
+    if (data.helpline) {
+      const hl = document.createElement("span");
+      hl.className = "law-tag";
+      hl.textContent = "Helpline: " + data.helpline;
+      footer.appendChild(hl);
+    }
+    if (data.portal) {
+      const pl = document.createElement("a");
+      pl.className = "law-tag";
+      pl.href = "https://" + data.portal;
+      pl.target = "_blank";
+      pl.rel = "noopener noreferrer";
+      pl.textContent = "🌐 " + data.portal;
+      footer.appendChild(pl);
+    }
+
+    if (footer.children.length > 0) card.appendChild(footer);
+
+    return card;
+  }
+
   /** Render the server response into the chat window. */
   function renderResponse(data) {
     if (data.type === "topic") {
       appendBotBubble(buildTopicCard(data));
+    } else if (data.type === "law") {
+      appendBotBubble(buildLawCard(data));
     } else if (data.type === "greeting" || data.type === "thanks") {
       appendBotBubble(data.text);
     } else {

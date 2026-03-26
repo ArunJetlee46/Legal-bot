@@ -425,3 +425,266 @@ class TestSetLanguageRoute:
         assert rv.status_code == 200
         data = rv.get_json()
         assert data["lang"] == "en"
+
+
+# ---------------------------------------------------------------------------
+# Laws database tests
+# ---------------------------------------------------------------------------
+
+from laws_database import (
+    load_laws_database,
+    search_law,
+    get_law_by_short_name,
+    get_all_laws,
+    get_law_categories,
+)
+
+
+class TestLawsDatabase:
+    def test_csv_loads_successfully(self):
+        laws = load_laws_database()
+        assert len(laws) > 0
+
+    def test_csv_has_expected_columns(self):
+        laws = load_laws_database()
+        required_cols = {
+            "act_name", "short_name", "year", "category",
+            "description", "key_provisions", "enforcing_authority",
+            "helpline", "portal", "status",
+        }
+        assert required_cols.issubset(set(laws[0].keys()))
+
+    def test_all_laws_have_act_name(self):
+        for law in load_laws_database():
+            assert law["act_name"].strip(), f"Empty act_name: {law}"
+
+    def test_all_laws_have_category(self):
+        for law in load_laws_database():
+            assert law["category"].strip(), f"Empty category: {law['act_name']}"
+
+    def test_at_least_70_laws(self):
+        assert len(load_laws_database()) >= 70
+
+    def test_search_by_short_name_exact(self):
+        results = search_law("IPC")
+        assert len(results) >= 1
+        assert results[0]["short_name"] == "IPC"
+
+    def test_search_by_short_name_lowercase(self):
+        results = search_law("ipc")
+        assert len(results) >= 1
+        assert results[0]["short_name"] == "IPC"
+
+    def test_search_by_short_name_in_sentence(self):
+        results = search_law("Tell me about the POCSO Act")
+        assert len(results) >= 1
+        assert results[0]["short_name"] == "POCSO Act"
+
+    def test_search_by_act_name_keyword(self):
+        results = search_law("consumer protection")
+        assert len(results) >= 1
+        assert any("Consumer" in r["act_name"] for r in results)
+
+    def test_search_rti(self):
+        results = search_law("right to information RTI")
+        assert len(results) >= 1
+        assert any("RTI" in r["short_name"] or "Information" in r["act_name"] for r in results)
+
+    def test_search_returns_empty_for_nonsense(self):
+        results = search_law("xyzqqqweather12345")
+        assert results == []
+
+    def test_search_empty_query_returns_empty(self):
+        results = search_law("")
+        assert results == []
+
+    def test_search_max_results_respected(self):
+        results = search_law("act", max_results=3)
+        assert len(results) <= 3
+
+    def test_get_law_by_short_name_found(self):
+        law = get_law_by_short_name("RERA")
+        assert law is not None
+        assert law["short_name"] == "RERA"
+
+    def test_get_law_by_short_name_case_insensitive(self):
+        law = get_law_by_short_name("rera")
+        assert law is not None
+
+    def test_get_law_by_short_name_not_found(self):
+        law = get_law_by_short_name("NONEXISTENT_ACT_XYZ")
+        assert law is None
+
+    def test_get_all_laws_returns_list(self):
+        laws = get_all_laws()
+        assert isinstance(laws, list)
+        assert len(laws) >= 70
+
+    def test_get_law_categories_returns_sorted_list(self):
+        cats = get_law_categories()
+        assert isinstance(cats, list)
+        assert len(cats) > 0
+        assert cats == sorted(cats)
+
+    def test_expected_categories_present(self):
+        cats = get_law_categories()
+        for expected in ["Criminal", "Labour", "Family", "Consumer", "Digital", "Environment"]:
+            assert expected in cats, f"Category '{expected}' not found"
+
+    def test_key_provisions_pipe_separated(self):
+        for law in load_laws_database():
+            provisions = law.get("key_provisions", "")
+            if provisions:
+                parts = [p.strip() for p in provisions.split("|") if p.strip()]
+                assert len(parts) >= 1, f"No provisions for {law['act_name']}"
+
+
+class TestSearchLawRoute:
+    def test_search_returns_200(self, client):
+        rv = client.get("/search_law?q=IPC")
+        assert rv.status_code == 200
+
+    def test_search_returns_list(self, client):
+        rv = client.get("/search_law?q=IPC")
+        data = rv.get_json()
+        assert isinstance(data, list)
+        assert len(data) >= 1
+
+    def test_search_result_has_required_fields(self, client):
+        rv = client.get("/search_law?q=RERA")
+        data = rv.get_json()
+        assert len(data) >= 1
+        result = data[0]
+        for field in ["type", "title", "short_name", "year", "category",
+                      "description", "provisions_html", "enforcing_authority",
+                      "helpline", "portal", "status"]:
+            assert field in result, f"Missing field: {field}"
+
+    def test_search_result_type_is_law(self, client):
+        rv = client.get("/search_law?q=POCSO")
+        data = rv.get_json()
+        assert data[0]["type"] == "law"
+
+    def test_search_missing_q_returns_400(self, client):
+        rv = client.get("/search_law")
+        assert rv.status_code == 400
+
+    def test_search_empty_q_returns_400(self, client):
+        rv = client.get("/search_law?q=")
+        assert rv.status_code == 400
+
+    def test_search_n_parameter_limits_results(self, client):
+        rv = client.get("/search_law?q=act&n=2")
+        data = rv.get_json()
+        assert len(data) <= 2
+
+    def test_search_n_capped_at_20(self, client):
+        rv = client.get("/search_law?q=act&n=100")
+        data = rv.get_json()
+        assert len(data) <= 20
+
+    def test_search_provisions_html_present(self, client):
+        rv = client.get("/search_law?q=RERA")
+        data = rv.get_json()
+        assert "<ul>" in data[0]["provisions_html"]
+        assert "<li>" in data[0]["provisions_html"]
+
+    def test_search_specific_laws(self, client):
+        queries_expected = [
+            ("Consumer Protection Act", "Consumer"),
+            ("POCSO", "Child Rights"),
+            ("RERA", "Property"),
+            ("EPF Act", "Labour"),
+        ]
+        for q, expected_cat in queries_expected:
+            rv = client.get(f"/search_law?q={q}")
+            data = rv.get_json()
+            assert len(data) >= 1, f"No results for '{q}'"
+            assert any(expected_cat in r["category"] for r in data), \
+                f"Expected category '{expected_cat}' not found for query '{q}'"
+
+
+class TestListLawsRoute:
+    def test_returns_200(self, client):
+        rv = client.get("/laws")
+        assert rv.status_code == 200
+
+    def test_returns_all_laws(self, client):
+        rv = client.get("/laws")
+        data = rv.get_json()
+        assert isinstance(data, list)
+        assert len(data) >= 70
+
+    def test_category_filter_works(self, client):
+        rv = client.get("/laws?category=Labour")
+        data = rv.get_json()
+        assert len(data) > 0
+        for item in data:
+            assert item["category"].lower() == "labour"
+
+    def test_category_filter_case_insensitive(self, client):
+        rv_lower = client.get("/laws?category=labour")
+        rv_upper = client.get("/laws?category=Labour")
+        assert rv_lower.get_json() == rv_upper.get_json()
+
+    def test_category_filter_unknown_returns_empty(self, client):
+        rv = client.get("/laws?category=NonExistentCategory12345")
+        data = rv.get_json()
+        assert data == []
+
+    def test_each_law_has_type_law(self, client):
+        rv = client.get("/laws")
+        data = rv.get_json()
+        for item in data:
+            assert item["type"] == "law"
+
+
+class TestLawCategoriesRoute:
+    def test_returns_200(self, client):
+        rv = client.get("/law_categories")
+        assert rv.status_code == 200
+
+    def test_returns_sorted_list(self, client):
+        rv = client.get("/law_categories")
+        data = rv.get_json()
+        assert isinstance(data, list)
+        assert data == sorted(data)
+
+    def test_contains_expected_categories(self, client):
+        rv = client.get("/law_categories")
+        data = rv.get_json()
+        for cat in ["Criminal", "Labour", "Family", "Consumer", "Digital"]:
+            assert cat in data
+
+
+class TestChatWithLawsFallback:
+    def test_chat_returns_law_type_for_specific_act(self, client):
+        rv = client.post("/chat", json={"message": "Tell me about RERA", "lang": "en"})
+        assert rv.status_code == 200
+        data = rv.get_json()
+        # Either "topic" from legal_knowledge or "law" from CSV database
+        assert data["type"] in ("topic", "law")
+
+    def test_chat_law_response_has_required_fields(self, client):
+        rv = client.post("/chat", json={"message": "What is POCSO Act", "lang": "en"})
+        assert rv.status_code == 200
+        data = rv.get_json()
+        if data["type"] == "law":
+            for field in ["title", "short_name", "year", "category",
+                          "description", "provisions_html"]:
+                assert field in data, f"Missing field: {field}"
+
+    def test_chat_ipc_query(self, client):
+        rv = client.post("/chat", json={"message": "Tell me about IPC", "lang": "en"})
+        assert rv.status_code == 200
+        data = rv.get_json()
+        assert data["type"] in ("topic", "law")
+
+    def test_chat_still_returns_unknown_for_nonsense(self, client):
+        rv = client.post(
+            "/chat",
+            json={"message": "xyzqqqweather12345", "lang": "en"},
+        )
+        assert rv.status_code == 200
+        data = rv.get_json()
+        assert data["type"] == "unknown"
