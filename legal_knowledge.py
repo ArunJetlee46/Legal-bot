@@ -1,7 +1,12 @@
 """
 Legal knowledge base for common Indian legal topics.
 Each topic contains keywords for intent detection and a structured response.
+NLP-enhanced matching uses Porter stemming and synonym expansion.
 """
+
+from __future__ import annotations
+
+from nlp_processor import preprocess_query, stem
 
 LEGAL_TOPICS = {
     "consumer_rights": {
@@ -497,15 +502,37 @@ GRATITUDE = [
 
 def find_topic(query: str) -> dict | None:
     """
-    Match user query to a legal topic using keyword matching.
-    Returns the topic dict or None if no match found.
+    Match user query to a legal topic using NLP-enhanced keyword matching.
+
+    Scoring combines:
+    - Exact substring keyword hit: 3 pts each
+    - Stemmed keyword match: 2 pts each (catches plurals, conjugations, etc.)
+    - Synonym-expanded token match: 1 pt each
+
+    Returns the best-matching topic dict or None if no match found.
     """
+    if not query:
+        return None
+
     query_lower = query.lower()
+    _, expanded_tokens = preprocess_query(query)
+
     best_match = None
     best_score = 0
 
     for topic_key, topic_data in LEGAL_TOPICS.items():
-        score = sum(1 for kw in topic_data["keywords"] if kw in query_lower)
+        score = 0
+        for kw in topic_data["keywords"]:
+            kw_lower = kw.lower()
+            # Exact substring match (highest weight)
+            if kw_lower in query_lower:
+                score += 3
+            else:
+                # Stemmed match (handles plurals and verb forms)
+                kw_stem = stem(kw_lower)
+                if kw_stem in expanded_tokens:
+                    score += 2
+
         if score > best_score:
             best_score = score
             best_match = topic_data
