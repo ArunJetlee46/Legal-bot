@@ -4,59 +4,100 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>{{ ui.title }}</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}" />
 </head>
 <body>
+
   <!-- ====== Header ====== -->
   <header class="site-header" role="banner">
     <div class="header-inner">
-      <div class="header-title">
-        <span class="logo" aria-hidden="true">⚖️</span>
-        <div>
+      <div class="header-brand">
+        <div class="brand-icon" aria-hidden="true">⚖️</div>
+        <div class="brand-text">
           <h1>{{ ui.title }}</h1>
           <p class="subtitle">{{ ui.subtitle }}</p>
         </div>
       </div>
 
-      <!-- Language Selector -->
-      <div class="lang-selector" role="navigation" aria-label="{{ ui.select_language }}">
-        <label for="lang-select">🌐 {{ ui.select_language }}:</label>
-        <select id="lang-select" aria-label="{{ ui.select_language }}">
-          {% for code, name in supported_languages.items() %}
-          <option value="{{ code }}" {% if code == lang %}selected{% endif %}>{{ name }}</option>
-          {% endfor %}
-        </select>
+      <div class="header-controls">
+        <!-- Dark mode toggle -->
+        <button id="theme-toggle" class="icon-btn" aria-label="Toggle dark mode" title="Toggle dark/light mode">
+          <span class="theme-icon">🌙</span>
+        </button>
+
+        <!-- Language Selector -->
+        <div class="lang-selector" role="navigation" aria-label="{{ ui.select_language }}">
+          <span class="lang-icon" aria-hidden="true">🌐</span>
+          <select id="lang-select" aria-label="{{ ui.select_language }}">
+            {% for code, name in supported_languages.items() %}
+            <option value="{{ code }}" {% if code == lang %}selected{% endif %}>{{ name }}</option>
+            {% endfor %}
+          </select>
+        </div>
       </div>
     </div>
 
     <!-- Emergency Helplines -->
     <div class="helplines" role="complementary" aria-label="Emergency helplines">
-      <span>{{ ui.emergency }}</span>
-      <span>{{ ui.women_helpline }}</span>
-      <span>{{ ui.child_helpline }}</span>
-      <span>{{ ui.legal_aid }}</span>
+      <span class="helpline-item">🚨 {{ ui.emergency }}</span>
+      <span class="helpline-item">👩 {{ ui.women_helpline }}</span>
+      <span class="helpline-item">👶 {{ ui.child_helpline }}</span>
+      <span class="helpline-item">⚖️ {{ ui.legal_aid }}</span>
     </div>
   </header>
 
   <!-- ====== Main Layout ====== -->
   <div class="app-layout">
 
-    <!-- Sidebar: Quick Topics -->
-    <aside class="sidebar" aria-label="{{ ui.topics_heading }}">
-      <h2 class="sidebar-heading">{{ ui.topics_heading }}</h2>
-      <nav>
-        <ul class="topic-list" role="list">
-          {% for topic in topics %}
-          <li>
-            <button
-              class="topic-btn"
-              data-key="{{ topic.key }}"
-              aria-label="Learn about {{ topic.title }}"
-            >{{ topic.title }}</button>
-          </li>
-          {% endfor %}
-        </ul>
-      </nav>
+    <!-- Sidebar -->
+    <aside class="sidebar" aria-label="Sidebar">
+      <!-- Tab Navigation -->
+      <div class="sidebar-tabs" role="tablist">
+        <button class="tab-btn active" id="tab-topics" role="tab" aria-selected="true" aria-controls="panel-topics">
+          📋 {{ ui.topics_heading }}
+        </button>
+        <button class="tab-btn" id="tab-browse" role="tab" aria-selected="false" aria-controls="panel-browse">
+          🔍 Browse Laws
+        </button>
+      </div>
+
+      <!-- Topics Panel -->
+      <div id="panel-topics" class="tab-panel active" role="tabpanel" aria-labelledby="tab-topics">
+        <nav>
+          <ul class="topic-list" role="list">
+            {% for topic in topics %}
+            <li>
+              <button
+                class="topic-btn"
+                data-key="{{ topic.key }}"
+                aria-label="Learn about {{ topic.title }}"
+              >
+                <span class="topic-icon">📖</span>
+                <span>{{ topic.title }}</span>
+              </button>
+            </li>
+            {% endfor %}
+          </ul>
+        </nav>
+      </div>
+
+      <!-- Browse Laws Panel -->
+      <div id="panel-browse" class="tab-panel" role="tabpanel" aria-labelledby="tab-browse" hidden>
+        <div class="browse-search">
+          <input
+            id="browse-input"
+            type="search"
+            placeholder="Search 7,500+ Indian laws…"
+            aria-label="Search Indian laws database"
+            autocomplete="off"
+          />
+          <button id="browse-btn" class="browse-search-btn" aria-label="Search laws">🔍</button>
+        </div>
+        <div id="browse-results" class="browse-results" aria-live="polite">
+          <p class="browse-hint">Search across 7,500+ Indian laws from IndianKanoon</p>
+        </div>
+      </div>
     </aside>
 
     <!-- Chat Area -->
@@ -71,25 +112,39 @@
         <!-- Initial greeting injected by JS -->
       </div>
 
+      <!-- Suggestion chips -->
+      <div id="suggestion-chips" class="suggestion-chips" aria-label="Quick suggestions">
+        <span class="chips-label">Try:</span>
+        <button class="chip" data-msg="What are my consumer rights?">Consumer Rights</button>
+        <button class="chip" data-msg="How do I file an RTI?">File RTI</button>
+        <button class="chip" data-msg="I need free legal aid">Legal Aid</button>
+        <button class="chip" data-msg="I was arrested, what are my rights?">Arrest Rights</button>
+        <button class="chip" data-msg="I am facing cyber crime">Cyber Crime</button>
+      </div>
+
       <!-- Input Row -->
       <form id="chat-form" class="chat-form" autocomplete="off" novalidate>
         <label for="user-input" class="sr-only">{{ ui.ask_placeholder }}</label>
-        <input
-          id="user-input"
-          type="text"
-          class="chat-input"
-          placeholder="{{ ui.ask_placeholder }}"
-          aria-label="{{ ui.ask_placeholder }}"
-          maxlength="500"
-          required
-        />
+        <div class="input-wrapper">
+          <input
+            id="user-input"
+            type="text"
+            class="chat-input"
+            placeholder="{{ ui.ask_placeholder }}"
+            aria-label="{{ ui.ask_placeholder }}"
+            maxlength="500"
+            required
+          />
+          <span id="char-count" class="char-count">500</span>
+        </div>
         <button type="submit" class="send-btn" aria-label="{{ ui.send_btn }}">
-          {{ ui.send_btn }}
+          <span class="send-icon" aria-hidden="true">➤</span>
+          <span class="send-text">{{ ui.send_btn }}</span>
         </button>
       </form>
 
       <!-- Disclaimer -->
-      <p class="disclaimer" role="note">{{ ui.disclaimer }}</p>
+      <p class="disclaimer" role="note">⚠️ {{ ui.disclaimer }}</p>
     </main>
   </div>
 

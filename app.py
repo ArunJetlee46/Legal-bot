@@ -30,6 +30,8 @@ from laws_database import (
     get_law_by_short_name,
     get_all_laws,
     get_law_categories,
+    search_kanoon,
+    load_kanoon_database,
 )
 
 app = Flask(__name__)
@@ -81,6 +83,19 @@ def _build_law_response(law: dict) -> dict:
         "helpline": law.get("helpline", ""),
         "portal": law.get("portal", ""),
         "status": law.get("status", ""),
+    }
+
+
+def _build_kanoon_response(law: dict) -> dict:
+    """Convert a Kanoon-index row dict into a structured chat response payload."""
+    return {
+        "type": "kanoon",
+        "title": law.get("title", ""),
+        "source": law.get("source", ""),
+        "place": law.get("place", ""),
+        "published_date": law.get("published_date", ""),
+        "commencement_date": law.get("commencement_date", ""),
+        "url": law.get("url", ""),
     }
 
 
@@ -157,7 +172,16 @@ def chat():
     if laws:
         return jsonify(_build_law_response(laws[0]))
 
-    # 5. No match
+    # 5. Kanoon index search (broad search across 7 500+ Indian laws)
+    kanoon_results = search_kanoon(message, max_results=3)
+    if kanoon_results:
+        return jsonify({
+            "type": "kanoon_list",
+            "text": "I found the following laws in the Indian legal database:",
+            "results": [_build_kanoon_response(r) for r in kanoon_results],
+        })
+
+    # 6. No match
     return jsonify({"type": "unknown", "text": ui["no_match"]})
 
 
@@ -217,6 +241,35 @@ def list_laws():
     if category_filter:
         all_laws = [law for law in all_laws if law.get("category", "").lower() == category_filter]
     return jsonify([_build_law_response(law) for law in all_laws])
+
+
+@app.route("/kanoon_search", methods=["GET"])
+def kanoon_search_route():
+    """
+    Search the Kanoon index (10 000+ Indian laws) by keyword.
+
+    Query parameters:
+      q   - search query (required)
+      n   - max number of results (optional, default 10, max 50)
+
+    Returns a JSON list of matching Kanoon law objects.
+    """
+    query = (request.args.get("q") or "").strip()
+    if not query:
+        return jsonify({"error": "Missing query parameter 'q'"}), 400
+    try:
+        n = min(int(request.args.get("n", 10)), 50)
+    except ValueError:
+        n = 10
+    results = search_kanoon(query, max_results=n)
+    return jsonify([_build_kanoon_response(r) for r in results])
+
+
+@app.route("/kanoon_stats", methods=["GET"])
+def kanoon_stats():
+    """Return count of entries in the Kanoon index."""
+    from laws_database import load_kanoon_database
+    return jsonify({"count": len(load_kanoon_database())})
 
 
 @app.route("/law_categories", methods=["GET"])

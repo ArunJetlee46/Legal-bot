@@ -688,3 +688,136 @@ class TestChatWithLawsFallback:
         assert rv.status_code == 200
         data = rv.get_json()
         assert data["type"] == "unknown"
+
+
+# ---------------------------------------------------------------------------
+# NLP Processor tests
+# ---------------------------------------------------------------------------
+
+class TestNLPProcessor:
+    def test_stem_basic(self):
+        from nlp_processor import stem
+        assert stem("consumer") == "consum"
+        assert stem("dismissed") == "dismiss"
+        assert stem("disability") == "disabl"
+
+    def test_tokenise_removes_stop_words(self):
+        from nlp_processor import tokenise
+        tokens = tokenise("What are my rights")
+        assert "what" not in tokens
+        assert "are" not in tokens
+        assert "my" not in tokens
+
+    def test_preprocess_query_returns_tuple(self):
+        from nlp_processor import preprocess_query
+        raw, expanded = preprocess_query("I was fired from my job")
+        assert isinstance(raw, list)
+        assert isinstance(expanded, set)
+
+    def test_synonym_expansion_fired(self):
+        from nlp_processor import preprocess_query
+        _, expanded = preprocess_query("I was fired")
+        # 'fired' should expand to include dismiss stem
+        assert "dismiss" in expanded or "terminat" in expanded
+
+    def test_nlp_improved_find_topic_fired(self):
+        topic = find_topic("I was fired from my job")
+        assert topic is not None
+        assert topic["title"] == "Labour Rights"
+
+    def test_nlp_improved_find_topic_cheated(self):
+        topic = find_topic("I was cheated in an online scam")
+        assert topic is not None
+
+    def test_extract_year(self):
+        from nlp_processor import extract_year
+        assert extract_year("The act of 1988") == "1988"
+        assert extract_year("no year here") is None
+        assert extract_year("2023 amendment") == "2023"
+
+
+# ---------------------------------------------------------------------------
+# Kanoon database tests
+# ---------------------------------------------------------------------------
+
+class TestKanoonDatabase:
+    def test_load_kanoon_database_returns_entries(self):
+        from laws_database import load_kanoon_database
+        db = load_kanoon_database()
+        assert len(db) > 1000
+
+    def test_kanoon_entries_have_required_keys(self):
+        from laws_database import load_kanoon_database
+        db = load_kanoon_database()
+        for row in db[:10]:
+            for key in ("title", "source", "url"):
+                assert key in row
+
+    def test_kanoon_no_duplicate_titles(self):
+        from laws_database import load_kanoon_database
+        db = load_kanoon_database()
+        titles = [r["title"] for r in db]
+        assert len(titles) == len(set(titles))
+
+    def test_search_kanoon_returns_results(self):
+        from laws_database import search_kanoon
+        results = search_kanoon("criminal law")
+        assert len(results) > 0
+
+    def test_search_kanoon_empty_query(self):
+        from laws_database import search_kanoon
+        results = search_kanoon("")
+        assert results == []
+
+    def test_search_kanoon_results_have_url(self):
+        from laws_database import search_kanoon
+        results = search_kanoon("constitution amendment")
+        for r in results:
+            assert "url" in r
+            assert r["url"].startswith("https://")
+
+
+# ---------------------------------------------------------------------------
+# New API routes tests
+# ---------------------------------------------------------------------------
+
+class TestKanoonSearchRoute:
+    def test_kanoon_search_returns_200(self, client):
+        rv = client.get("/kanoon_search?q=criminal")
+        assert rv.status_code == 200
+
+    def test_kanoon_search_returns_list(self, client):
+        rv = client.get("/kanoon_search?q=criminal")
+        data = rv.get_json()
+        assert isinstance(data, list)
+        assert len(data) > 0
+
+    def test_kanoon_search_missing_query_returns_400(self, client):
+        rv = client.get("/kanoon_search")
+        assert rv.status_code == 400
+
+    def test_kanoon_search_result_has_url(self, client):
+        rv = client.get("/kanoon_search?q=act")
+        data = rv.get_json()
+        for item in data:
+            assert "url" in item
+            assert "title" in item
+
+    def test_kanoon_stats_returns_count(self, client):
+        rv = client.get("/kanoon_stats")
+        assert rv.status_code == 200
+        data = rv.get_json()
+        assert "count" in data
+        assert data["count"] > 1000
+
+
+class TestChatKanoonFallback:
+    def test_chat_can_return_kanoon_list_or_unknown(self, client):
+        rv = client.post(
+            "/chat",
+            json={"message": "Oil Reception Facilities Port Act 1974", "lang": "en"},
+        )
+        assert rv.status_code == 200
+        data = rv.get_json()
+        # Should be kanoon_list, law, or unknown (not an error)
+        assert data["type"] in ("kanoon_list", "law", "unknown", "topic")
