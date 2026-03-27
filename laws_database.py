@@ -18,6 +18,7 @@ NLP-enhanced scoring is applied via :mod:`nlp_processor`.
 from __future__ import annotations
 
 import csv
+import heapq
 import os
 import re
 from functools import lru_cache
@@ -56,6 +57,45 @@ def load_laws_database() -> tuple[dict, ...]:
 
 
 @lru_cache(maxsize=1)
+def _load_preprocessed_laws() -> tuple[dict, ...]:
+    """
+    Load laws and pre-compute expensive operations like lowercasing and NLP tokens.
+    This avoids redundant computation in every search.
+    Returns tuple of dicts with additional preprocessed fields.
+    """
+    laws = load_laws_database()
+    preprocessed = []
+    for law in laws:
+        # Pre-compute lowercase versions
+        act_name = law.get("act_name", "")
+        short_name = law.get("short_name", "")
+        category = law.get("category", "")
+        description = law.get("description", "")
+
+        # Pre-compute NLP tokens for act_name (most expensive operation)
+        _, act_nlp = preprocess_query(act_name)
+
+        # Pre-compute tokenized versions
+        act_tokens = _tokenise(act_name)
+        short_tokens = _tokenise(short_name)
+        desc_tokens = _tokenise(description)
+
+        preprocessed.append({
+            "law": law,
+            "act_name_lower": act_name.lower(),
+            "short_name_lower": short_name.lower(),
+            "category_lower": category.lower(),
+            "description_lower": description.lower(),
+            "year": law.get("year", "").strip(),
+            "act_tokens": act_tokens,
+            "short_tokens": short_tokens,
+            "desc_tokens": desc_tokens,
+            "act_nlp": act_nlp,
+        })
+    return tuple(preprocessed)
+
+
+@lru_cache(maxsize=1)
 def load_kanoon_database() -> tuple[dict, ...]:
     """
     Load the root Kanoon CSV (10 000+ entries) deduped by title.
@@ -73,6 +113,34 @@ def load_kanoon_database() -> tuple[dict, ...]:
                 seen.add(title)
                 laws.append(dict(row))
     return tuple(laws)
+
+
+@lru_cache(maxsize=1)
+def _load_preprocessed_kanoon() -> tuple[dict, ...]:
+    """
+    Load Kanoon database and pre-compute expensive operations.
+    Returns tuple of dicts with preprocessed fields.
+    """
+    laws = load_kanoon_database()
+    preprocessed = []
+    for law in laws:
+        title = law.get("title", "")
+        source = law.get("source", "")
+        place = law.get("place", "")
+
+        # Pre-compute NLP tokens for title
+        _, title_nlp = preprocess_query(title)
+
+        preprocessed.append({
+            "law": law,
+            "title": title,
+            "title_lower": title.lower(),
+            "source_lower": source.lower(),
+            "place_lower": place.lower(),
+            "pub_date": law.get("published_date", ""),
+            "title_nlp": title_nlp,
+        })
+    return tuple(preprocessed)
 
 
 def _tokenise(text: str) -> set[str]:
@@ -106,44 +174,52 @@ def search_law(query: str, max_results: int = 5) -> list[dict]:
     _, nlp_tokens = preprocess_query(query_stripped)
     year_hint = extract_year(query_stripped)
 
+    # Use preprocessed data to avoid redundant computation
+    preprocessed_laws = _load_preprocessed_laws()
+
+    # Pre-compile regex pattern if needed for short_name matching
     scored: list[tuple[int, dict]] = []
-    for law in load_laws_database():
+
+    for prep in preprocessed_laws:
         score = 0
-        act_name = law.get("act_name", "").lower()
-        short_name = law.get("short_name", "").lower()
-        category = law.get("category", "").lower()
-        description = law.get("description", "").lower()
-        year = law.get("year", "").strip()
+        law = prep["law"]
+
+        # Use precomputed lowercase values
+        act_name_lower = prep["act_name_lower"]
+        short_name_lower = prep["short_name_lower"]
+        category_lower = prep["category_lower"]
+        year = prep["year"]
 
         # --- short_name matching ---
-        if short_name and short_name == query_lower:
+        if short_name_lower and short_name_lower == query_lower:
             score += 20
-        elif short_name and re.search(r"\b" + re.escape(short_name) + r"\b", query_lower):
+        elif short_name_lower and re.search(r"\b" + re.escape(short_name_lower) + r"\b", query_lower):
             score += 12
         else:
-            short_tokens = _tokenise(short_name)
+            short_tokens = prep["short_tokens"]
             if short_tokens and short_tokens == query_tokens:
                 score += 16
             elif short_tokens and short_tokens <= query_tokens:
                 score += 10
 
         # --- act_name matching ---
-        if act_name and act_name == query_lower:
+        if act_name_lower and act_name_lower == query_lower:
             score += 18
 
-        act_tokens = _tokenise(law.get("act_name", ""))
+        # Use precomputed act_tokens
+        act_tokens = prep["act_tokens"]
         score += len(act_tokens & query_tokens) * 3
 
-        # --- NLP stemmed overlap (catches plurals, verb forms) ---
-        _, act_nlp = preprocess_query(law.get("act_name", ""))
+        # --- NLP stemmed overlap (use precomputed NLP tokens) ---
+        act_nlp = prep["act_nlp"]
         score += len(act_nlp & nlp_tokens) * 2
 
         # --- category matching ---
-        if category and category in query_lower:
+        if category_lower and category_lower in query_lower:
             score += 4
 
-        # --- description keyword overlap ---
-        desc_tokens = _tokenise(description)
+        # --- description keyword overlap (use precomputed tokens) ---
+        desc_tokens = prep["desc_tokens"]
         score += len(desc_tokens & query_tokens)
 
         # --- year match ---
@@ -153,8 +229,14 @@ def search_law(query: str, max_results: int = 5) -> list[dict]:
         if score > 0:
             scored.append((score, law))
 
-    scored.sort(key=lambda x: x[0], reverse=True)
-    return [law for _, law in scored[:max_results]]
+    # Use heap for efficient top-k selection instead of full sort
+    if len(scored) <= max_results:
+        scored.sort(key=lambda x: x[0], reverse=True)
+        return [law for _, law in scored]
+    else:
+        # Get top max_results using heapq (more efficient than sorting all)
+        top_scored = heapq.nlargest(max_results, scored, key=lambda x: x[0])
+        return [law for _, law in top_scored]
 
 
 def search_kanoon(query: str, max_results: int = 10) -> list[dict]:
@@ -180,13 +262,16 @@ def search_kanoon(query: str, max_results: int = 10) -> list[dict]:
     _, nlp_tokens = preprocess_query(query_stripped)
     year_hint = extract_year(query_stripped)
 
+    # Use preprocessed data
+    preprocessed_kanoon = _load_preprocessed_kanoon()
+
     scored: list[tuple[int, dict]] = []
-    for law in load_kanoon_database():
-        title = law.get("title", "")
-        title_lower = title.lower()
-        source = law.get("source", "").lower()
-        place = law.get("place", "").lower()
-        pub_date = law.get("published_date", "")
+    for prep in preprocessed_kanoon:
+        law = prep["law"]
+        title_lower = prep["title_lower"]
+        source_lower = prep["source_lower"]
+        place_lower = prep["place_lower"]
+        pub_date = prep["pub_date"]
 
         score = 0
 
@@ -197,13 +282,13 @@ def search_kanoon(query: str, max_results: int = 10) -> list[dict]:
         elif title_lower in query_lower:
             score += 8
 
-        # NLP token overlap with title
-        _, title_nlp = preprocess_query(title)
+        # NLP token overlap with title (use precomputed)
+        title_nlp = prep["title_nlp"]
         overlap = len(title_nlp & nlp_tokens)
         score += overlap * 3
 
         # Source / place match
-        if query_lower in source or query_lower in place:
+        if query_lower in source_lower or query_lower in place_lower:
             score += 2
 
         # Year hint
@@ -213,8 +298,13 @@ def search_kanoon(query: str, max_results: int = 10) -> list[dict]:
         if score > 0:
             scored.append((score, law))
 
-    scored.sort(key=lambda x: x[0], reverse=True)
-    return [law for _, law in scored[:max_results]]
+    # Use heap for efficient top-k selection
+    if len(scored) <= max_results:
+        scored.sort(key=lambda x: x[0], reverse=True)
+        return [law for _, law in scored]
+    else:
+        top_scored = heapq.nlargest(max_results, scored, key=lambda x: x[0])
+        return [law for _, law in top_scored]
 
 
 def get_law_by_short_name(short_name: str) -> dict | None:

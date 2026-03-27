@@ -145,14 +145,14 @@ def chat():
     if not message:
         return jsonify({"type": "error", "text": "Empty message"}), 400
 
-    ui = get_ui_strings(lang)
-
-    # Auto-detect language if not explicitly set
+    # Auto-detect language if not explicitly set (only once, before getting UI strings)
     if lang == DEFAULT_LANGUAGE:
         detected = detect_language(message)
         if detected != DEFAULT_LANGUAGE and detected in SUPPORTED_LANGUAGES:
             lang = detected
-            ui = get_ui_strings(lang)
+
+    # Get UI strings once for the final language
+    ui = get_ui_strings(lang)
 
     # 1. Greeting
     if is_greeting(message):
