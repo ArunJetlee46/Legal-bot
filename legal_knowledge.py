@@ -6,6 +6,8 @@ NLP-enhanced matching uses Porter stemming and synonym expansion.
 
 from __future__ import annotations
 
+from functools import lru_cache
+
 from nlp_processor import preprocess_query, stem
 
 LEGAL_TOPICS = {
@@ -500,6 +502,29 @@ GRATITUDE = [
 ]
 
 
+@lru_cache(maxsize=1)
+def _get_preprocessed_topics() -> dict[str, dict]:
+    """
+    Pre-compute lowercased keywords and stemmed versions for all topics.
+    This avoids redundant lowercasing and stemming in every query.
+    Returns a dict with topic_key -> preprocessed data.
+    """
+    preprocessed = {}
+    for topic_key, topic_data in LEGAL_TOPICS.items():
+        # Pre-compute lowercase keywords
+        keywords_lower = [kw.lower() for kw in topic_data["keywords"]]
+
+        # Pre-compute stemmed keywords
+        keywords_stemmed = [stem(kw_lower) for kw_lower in keywords_lower]
+
+        preprocessed[topic_key] = {
+            "topic_data": topic_data,
+            "keywords_lower": keywords_lower,
+            "keywords_stemmed": keywords_stemmed,
+        }
+    return preprocessed
+
+
 def find_topic(query: str) -> dict | None:
     """
     Match user query to a legal topic using NLP-enhanced keyword matching.
@@ -517,25 +542,31 @@ def find_topic(query: str) -> dict | None:
     query_lower = query.lower()
     _, expanded_tokens = preprocess_query(query)
 
+    # Use preprocessed topics
+    preprocessed_topics = _get_preprocessed_topics()
+
     best_match = None
     best_score = 0
 
-    for topic_key, topic_data in LEGAL_TOPICS.items():
+    for topic_key, prep in preprocessed_topics.items():
         score = 0
-        for kw in topic_data["keywords"]:
-            kw_lower = kw.lower()
+        keywords_lower = prep["keywords_lower"]
+        keywords_stemmed = prep["keywords_stemmed"]
+
+        # Iterate with index to access both lowercase and stemmed versions
+        for i, kw_lower in enumerate(keywords_lower):
             # Exact substring match (highest weight)
             if kw_lower in query_lower:
                 score += 3
             else:
-                # Stemmed match (handles plurals and verb forms)
-                kw_stem = stem(kw_lower)
+                # Stemmed match (use precomputed stem)
+                kw_stem = keywords_stemmed[i]
                 if kw_stem in expanded_tokens:
                     score += 2
 
         if score > best_score:
             best_score = score
-            best_match = topic_data
+            best_match = prep["topic_data"]
 
     return best_match if best_score > 0 else None
 
